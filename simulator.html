@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>异构物流设备协同调度仿真模拟器</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0d1117; color: #e6edf3; font-family: 'Segoe UI', Arial, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+#topbar {
+  background: #161b22; border-bottom: 1px solid #30363d;
+  padding: 10px 20px; display: flex; align-items: center; gap: 16px; flex-shrink: 0;
+}
+#topbar h1 { font-size: 16px; color: #58a6ff; flex: 1; }
+.btn {
+  padding: 6px 16px; border: 1px solid #30363d; border-radius: 6px;
+  cursor: pointer; font-size: 13px; transition: all 0.2s;
+}
+.btn-mode { background: #21262d; color: #e6edf3; }
+.btn-mode:hover { background: #30363d; }
+.btn-mode.active-trad { background: #b91c1c; border-color: #ef4444; color: #fff; }
+.btn-mode.active-smart { background: #15803d; border-color: #22c55e; color: #fff; }
+.btn-reset { background: #21262d; color: #e6edf3; }
+.btn-reset:hover { background: #30363d; }
+.mode-label { font-size: 12px; padding: 4px 10px; border-radius: 4px; }
+.mode-label.trad { background: #450a0a; color: #fca5a5; border: 1px solid #b91c1c; }
+.mode-label.smart { background: #052e16; color: #86efac; border: 1px solid #15803d; }
+
+#main { display: flex; flex: 1; overflow: hidden; }
+
+#canvas-container {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 10px; position: relative;
+}
+canvas { border: 1px solid #30363d; border-radius: 4px; }
+
+#legend {
+  display: flex; gap: 16px; margin-top: 8px; font-size: 12px;
+}
+.legend-item { display: flex; align-items: center; gap: 6px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+#panel {
+  width: 300px; background: #161b22; border-left: 1px solid #30363d;
+  display: flex; flex-direction: column; overflow-y: auto; flex-shrink: 0;
+}
+.panel-section { padding: 14px; border-bottom: 1px solid #30363d; }
+.panel-section h3 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; }
+
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.stat-card {
+  background: #0d1117; border: 1px solid #30363d; border-radius: 6px;
+  padding: 10px; text-align: center;
+}
+.stat-card .val { font-size: 22px; font-weight: bold; }
+.stat-card .lbl { font-size: 11px; color: #8b949e; margin-top: 2px; }
+.stat-card .val.red { color: #f87171; }
+.stat-card .val.green { color: #4ade80; }
+.stat-card .val.blue { color: #60a5fa; }
+.stat-card .val.yellow { color: #facc15; }
+
+.compare-row {
+  display: flex; align-items: center; margin-bottom: 8px; font-size: 12px;
+}
+.compare-row .clabel { width: 100px; color: #8b949e; }
+.bar-wrap { flex: 1; height: 14px; background: #0d1117; border-radius: 4px; overflow: hidden; position: relative; }
+.bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+.bar-val { position: absolute; right: 4px; top: 0; line-height: 14px; font-size: 11px; }
+
+.device-list { display: flex; flex-direction: column; gap: 6px; }
+.device-row {
+  display: flex; align-items: center; gap: 8px; font-size: 12px;
+  background: #0d1117; border-radius: 4px; padding: 6px 8px; border: 1px solid #21262d;
+}
+.device-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.device-name { width: 55px; font-weight: 500; }
+.device-status { flex: 1; color: #8b949e; }
+.device-bar-wrap { width: 50px; height: 6px; background: #21262d; border-radius: 3px; overflow: hidden; }
+.device-bar { height: 100%; background: #22c55e; border-radius: 3px; transition: width 0.3s; }
+
+#log-area { font-size: 11px; max-height: 160px; overflow-y: auto; }
+.log-entry { padding: 3px 0; border-bottom: 1px solid #21262d; color: #8b949e; }
+.log-entry.new { color: #e6edf3; }
+.log-entry .tag { padding: 1px 5px; border-radius: 3px; font-size: 10px; margin-right: 5px; }
+.tag-task { background: #1d4ed8; color: #bfdbfe; }
+.tag-conflict { background: #7f1d1d; color: #fecaca; }
+.tag-done { background: #14532d; color: #bbf7d0; }
+.tag-mode { background: #4c1d95; color: #e9d5ff; }
+
+.speed-control { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+.speed-control input[type=range] { flex: 1; accent-color: #58a6ff; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>异构物流设备协同调度仿真模拟器</h1>
+  <div class="speed-control">
+    <span>速度</span>
+    <input type="range" id="speedSlider" min="0.5" max="3" step="0.5" value="1">
+    <span id="speedLabel">1x</span>
+  </div>
+  <button class="btn btn-mode active-trad" id="btnMode" onclick="toggleMode()">切换智能模式</button>
+  <button class="btn btn-reset" onclick="resetSim()">重置模拟</button>
+  <span class="mode-label trad" id="modeLabel">传统分区模式</span>
+</div>
+
+<div id="main">
+  <div id="canvas-container">
+    <canvas id="simCanvas"></canvas>
+    <div id="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>AGV (A厂)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div>无人叉车 (B厂)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e"></div>穿梭车 (C厂)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;border-radius:2px;width:16px;height:8px;"></div>任务包裹</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a855f7;border-radius:2px;width:16px;height:8px;"></div>路口冲突</div>
+    </div>
+  </div>
+
+  <div id="panel">
+    <div class="panel-section">
+      <h3>实时统计</h3>
+      <div class="stat-grid">
+        <div class="stat-card"><div class="val green" id="st-done">0</div><div class="lbl">完成任务</div></div>
+        <div class="stat-card"><div class="val yellow" id="st-pending">0</div><div class="lbl">等待中</div></div>
+        <div class="stat-card"><div class="val red" id="st-conflict">0</div><div class="lbl">冲突次数</div></div>
+        <div class="stat-card"><div class="val blue" id="st-util">0%</div><div class="lbl">利用率</div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>模式对比</h3>
+      <div class="compare-row">
+        <span class="clabel">完成任务</span>
+        <div style="flex:1">
+          <div style="display:flex;gap:4px;margin-bottom:3px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-done-trad" style="background:#ef4444;width:0%"></div>
+              <span class="bar-val" id="cmp-done-trad-v">0</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-done-smart" style="background:#22c55e;width:0%"></div>
+              <span class="bar-val" id="cmp-done-smart-v">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;font-size:11px;color:#8b949e;margin-bottom:8px">
+        <span style="color:#f87171">■ 传统</span><span style="color:#4ade80">■ 智能</span>
+      </div>
+      <div class="compare-row">
+        <span class="clabel">平均等待(s)</span>
+        <div style="flex:1">
+          <div style="display:flex;gap:4px;margin-bottom:3px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-wait-trad" style="background:#ef4444;width:0%"></div>
+              <span class="bar-val" id="cmp-wait-trad-v">0</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-wait-smart" style="background:#22c55e;width:0%"></div>
+              <span class="bar-val" id="cmp-wait-smart-v">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="compare-row">
+        <span class="clabel">冲突次数</span>
+        <div style="flex:1">
+          <div style="display:flex;gap:4px;margin-bottom:3px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-conf-trad" style="background:#ef4444;width:0%"></div>
+              <span class="bar-val" id="cmp-conf-trad-v">0</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:4px">
+            <div class="bar-wrap" style="flex:1">
+              <div class="bar-fill" id="cmp-conf-smart" style="background:#22c55e;width:0%"></div>
+              <span class="bar-val" id="cmp-conf-smart-v">0</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <h3>设备状态</h3>
+      <div class="device-list" id="deviceList"></div>
+    </div>
+
+    <div class="panel-section">
+      <h3>事件日志</h3>
+      <div id="log-area"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+//  CONSTANTS & CONFIG
+// ─────────────────────────────────────────────
+const CELL = 40; // pixels per grid cell
+const COLS = 18;
+const ROWS = 14;
+
+// Zone definitions (grid col/row ranges, inclusive)
+const ZONES = {
+  A: { label:'A区(入库)', x:0,  y:0,  w:4, h:14, color:'rgba(239,68,68,0.12)',  border:'#ef4444' },
+  B: { label:'B区(存储)', x:5,  y:0,  w:5, h:14, color:'rgba(59,130,246,0.12)', border:'#3b82f6' },
+  C: { label:'C区(分拣)', x:11, y:0,  w:4, h:14, color:'rgba(34,197,94,0.12)',  border:'#22c55e' },
+  D: { label:'D区(出库)', x:16, y:0,  w:2, h:14, color:'rgba(245,158,11,0.12)', border:'#f59e0b' },
+};
+
+// Corridors (columns that act as main corridors between zones)
+const CORRIDOR_COLS = [4, 10, 15]; // vertical corridors
+const CORRIDOR_ROWS = [3, 7, 11];  // horizontal corridors
+
+// Intersections (key nodes for traffic control)
+const INTERSECTIONS = [];
+for (const c of CORRIDOR_COLS) for (const r of CORRIDOR_ROWS) INTERSECTIONS.push({c, r});
+
+// Zone center waypoints for tasks
+const ZONE_POINTS = {
+  A: [{c:2, r:3},{c:2, r:7},{c:2, r:11}],
+  B: [{c:7, r:3},{c:7, r:7},{c:7, r:11}],
+  C: [{c:13,r:3},{c:13,r:7},{c:13,r:11}],
+  D: [{c:17,r:3},{c:17,r:7},{c:17,r:11}],
+};
+
+// Device type definitions
+const DEVICE_TYPES = [
+  { type:'AGV',     color:'#ef4444', zone:'A', speed:1.8, count:3 },
+  { type:'Forklift',color:'#3b82f6', zone:'B', speed:1.0, count:3 },
+  { type:'Shuttle', color:'#22c55e', zone:'C', speed:2.5, count:3 },
+  { type:'Dock',    color:'#94a3b8', zone:'D', speed:1.4, count:2 },
+];
+
+// Task route pairs (cross-zone)
+const TASK_ROUTES = [
+  ['A','D'],['A','C'],['B','D'],['B','C'],['A','B'],['C','D'],['D','A'],['C','B'],
+];
+
+const ZONE_SEQUENCE = ['A', 'B', 'C', 'D'];
+const TRADITIONAL_ZONE_BOUNDS = {
+  A: { min: 0, max: 4 },
+  B: { min: 4, max: 10 },
+  C: { min: 10, max: 15 },
+  D: { min: 15, max: 17 },
+};
+const HANDOFF_COLUMNS = {
+  'A:B': 4,
+  'B:C': 10,
+  'C:D': 15,
+};
+
+// ─────────────────────────────────────────────
+//  STATE
+// ─────────────────────────────────────────────
+let smartMode = false;
+let devices = [];
+let tasks = [];
+let taskIdCounter = 0;
+let stats = { trad:{ done:0, totalWait:0, conflicts:0, taskCount:0 }, smart:{ done:0, totalWait:0, conflicts:0, taskCount:0 } };
+let currentStats = () => smartMode ? stats.smart : stats.trad;
+let intersectionLocks = {}; // key: "c,r" => deviceId or null
+let lastTaskTime = 0;
+let taskInterval = 2500; // ms
+let simTime = 0;
+let lastTimestamp = 0;
+let speedMult = 1;
+let logEntries = [];
+let animFrame;
+let conflicts = []; // [{c,r,ttl}] for visual flash
+
+// Canvas
+const canvas = document.getElementById('simCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  const container = document.getElementById('canvas-container');
+  const maxW = container.clientWidth - 20;
+  const maxH = container.clientHeight - 50;
+  const scale = Math.min(maxW / (COLS * CELL), maxH / (ROWS * CELL));
+  canvas.width = Math.floor(COLS * CELL * scale);
+  canvas.height = Math.floor(ROWS * CELL * scale);
+  canvas._scale = scale;
+}
+
+// ─────────────────────────────────────────────
+//  PATHFINDING (A* on grid)
+// ─────────────────────────────────────────────
+function heuristic(a, b) {
+  return Math.abs(a.c - b.c) + Math.abs(a.r - b.r);
+}
+
+function isWalkable(c, r, allowedFn = null) {
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
+  if (allowedFn) return allowedFn(c, r);
+  return true;
+}
+
+function getNeighbors(node, allowedFn = null) {
+  const dirs = [{dc:1,dr:0},{dc:-1,dr:0},{dc:0,dr:1},{dc:0,dr:-1}];
+  return dirs.map(d => ({c: node.c+d.dc, r: node.r+d.dr}))
+             .filter(n => isWalkable(n.c, n.r, allowedFn));
+}
+
+function cellCost(c, r) {
+  // Corridor cells preferred (lower cost)
+  if (CORRIDOR_COLS.includes(c) || CORRIDOR_ROWS.includes(r)) return 1;
+  return 2; // zone interior is costlier to encourage corridor use
+}
+
+function aStar(start, goal, allowedFn = null) {
+  const key = n => `${n.c},${n.r}`;
+  const open = [{ ...start, g:0, f: heuristic(start, goal), parent:null }];
+  const closed = new Set();
+  const best = { [key(start)]: 0 };
+
+  while (open.length) {
+    open.sort((a,b) => a.f - b.f);
+    const cur = open.shift();
+    if (cur.c === goal.c && cur.r === goal.r) {
+      // Reconstruct path
+      const path = [];
+      let n = cur;
+      while (n) { path.unshift({c:n.c, r:n.r}); n = n.parent; }
+      return path;
+    }
+    const ck = key(cur);
+    if (closed.has(ck)) continue;
+    closed.add(ck);
+
+    for (const nb of getNeighbors(cur, allowedFn)) {
+      const nbk = key(nb);
+      if (closed.has(nbk)) continue;
+      const g = cur.g + cellCost(nb.c, nb.r);
+      if (best[nbk] !== undefined && best[nbk] <= g) continue;
+      best[nbk] = g;
+      open.push({ ...nb, g, f: g + heuristic(nb, goal), parent: cur });
+    }
+  }
+  return [start]; // fallback
+}
+
+function getTraditionalAccessRule(zone) {
+  const bounds = TRADITIONAL_ZONE_BOUNDS[zone];
+  return (c) => c >= bounds.min && c <= bounds.max;
+}
+
+function getTravelRule(dev) {
+  return smartMode ? null : getTraditionalAccessRule(dev.zone);
+}
+
+function normalizeZonePair(zoneA, zoneB) {
+  const indexA = ZONE_SEQUENCE.indexOf(zoneA);
+  const indexB = ZONE_SEQUENCE.indexOf(zoneB);
+  return indexA <= indexB ? `${zoneA}:${zoneB}` : `${zoneB}:${zoneA}`;
+}
+
+function nearestCorridorRow(row) {
+  return CORRIDOR_ROWS.reduce((best, candidate) =>
+    Math.abs(candidate - row) < Math.abs(best - row) ? candidate : best,
+  CORRIDOR_ROWS[0]);
+}
+
+function getHandoffPoint(fromZone, toZone, row) {
+  const column = HANDOFF_COLUMNS[normalizeZonePair(fromZone, toZone)];
+  return { c: column, r: row };
+}
+
+function buildTraditionalLegs(task) {
+  const startIdx = ZONE_SEQUENCE.indexOf(task.fromZone);
+  const endIdx = ZONE_SEQUENCE.indexOf(task.toZone);
+  if (startIdx === -1 || endIdx === -1 || startIdx === endIdx) {
+    return [{ zone: task.fromZone, pickup: { ...task.from }, drop: { ...task.to } }];
+  }
+
+  const legs = [];
+  const step = startIdx < endIdx ? 1 : -1;
+  const relayRow = nearestCorridorRow(task.from.r);
+  let pickupPoint = { ...task.from };
+
+  for (let index = startIdx; index !== endIdx; index += step) {
+    const zone = ZONE_SEQUENCE[index];
+    const nextZone = ZONE_SEQUENCE[index + step];
+    const dropPoint = getHandoffPoint(zone, nextZone, relayRow);
+    legs.push({
+      zone,
+      pickup: { ...pickupPoint },
+      drop: { ...dropPoint },
+    });
+    pickupPoint = { ...dropPoint };
+  }
+
+  legs.push({
+    zone: task.toZone,
+    pickup: { ...pickupPoint },
+    drop: { ...task.to },
+  });
+  return legs;
+}
+
+function prepareTraditionalTask(task) {
+  if (!task.legs) {
+    task.legs = buildTraditionalLegs(task);
+    task.legIndex = 0;
+  }
+
+  const leg = task.legs[task.legIndex];
+  task.segmentZone = leg.zone;
+  task.pickupPoint = { ...leg.pickup };
+  task.dropPoint = { ...leg.drop };
+  task.assignedDevice = null;
+  task.state = 'pending';
+  task.px = (task.pickupPoint.c + 0.5) * CELL;
+  task.py = (task.pickupPoint.r + 0.5) * CELL;
+  return leg;
+}
+
+function getTaskPickup(task) {
+  return smartMode ? task.from : task.pickupPoint;
+}
+
+function getTaskDrop(task) {
+  return smartMode ? task.to : task.dropPoint;
+}
+
+// ─────────────────────────────────────────────
+//  DEVICE MANAGEMENT
+// ─────────────────────────────────────────────
+function createDevices() {
+  devices = [];
+  let id = 0;
+  for (const dt of DEVICE_TYPES) {
+    for (let i = 0; i < dt.count; i++) {
+      const pts = ZONE_POINTS[dt.zone];
+      const home = pts[i % pts.length];
+      devices.push({
+        id: id++,
+        type: dt.type,
+        color: dt.color,
+        zone: dt.zone,
+        speed: dt.speed,
+        // pixel position (centered in cell)
+        x: (home.c + 0.5) * CELL,
+        y: (home.r + 0.5) * CELL,
+        home: { ...home },
+        path: [],       // remaining waypoints [{c,r}]
+        pathIdx: 0,
+        busy: false,
+        task: null,
+        waitTime: 0,    // accumulated wait in current task
+        utilTime: 0,    // total time spent moving
+        idleTime: 0,
+        waitingAtIntersection: false,
+        phase: null,
+        _conflictCounted: false,
+      });
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  TASK MANAGEMENT
+// ─────────────────────────────────────────────
+function spawnTask() {
+  const route = TASK_ROUTES[Math.floor(Math.random() * TASK_ROUTES.length)];
+  const [fromZone, toZone] = route;
+  const fromPts = ZONE_POINTS[fromZone];
+  const toPts = ZONE_POINTS[toZone];
+  const from = fromPts[Math.floor(Math.random() * fromPts.length)];
+  const to = toPts[Math.floor(Math.random() * toPts.length)];
+  const task = {
+    id: taskIdCounter++,
+    fromZone, toZone,
+    from: {...from}, to: {...to},
+    state: 'pending', // pending -> assigned -> pickup -> deliver -> done
+    assignedDevice: null,
+    spawnTime: simTime,
+    pickupTime: 0,
+    doneTime: 0,
+    px: (from.c + 0.5) * CELL, // package pixel pos
+    py: (from.r + 0.5) * CELL,
+    legs: null,
+    legIndex: 0,
+    segmentZone: fromZone,
+    pickupPoint: { ...from },
+    dropPoint: { ...to },
+  };
+  if (!smartMode) prepareTraditionalTask(task);
+  tasks.push(task);
+  currentStats().taskCount++;
+  addLog('task', `任务#${task.id} ${fromZone}→${toZone}`);
+}
+
+function assignTasks() {
+  const pending = tasks.filter(t => t.state === 'pending');
+  for (const task of pending) {
+    if (smartMode) {
+      assignSmart(task);
+    } else {
+      assignTraditional(task);
+    }
+  }
+}
+
+// Traditional: relay the package one zone at a time.
+function assignTraditional(task) {
+  const leg = prepareTraditionalTask(task);
+  const candidates = devices.filter(d => !d.busy && d.zone === leg.zone);
+  if (!candidates.length) return;
+  const dev = nearest(candidates, task.pickupPoint);
+  assign(dev, task);
+}
+
+// Smart: pick best device globally using distance + speed scoring
+function assignSmart(task) {
+  const candidates = devices.filter(d => !d.busy);
+  if (!candidates.length) return;
+  // Score = distance / speed (lower is better)
+  let best = null, bestScore = Infinity;
+  for (const d of candidates) {
+    const dist = heuristic({c: Math.round(d.x/CELL - 0.5), r: Math.round(d.y/CELL - 0.5)}, task.from);
+    const score = dist / d.speed;
+    if (score < bestScore) { bestScore = score; best = d; }
+  }
+  if (best) assign(best, task);
+}
+
+function nearest(candidates, point) {
+  let best = null, bestDist = Infinity;
+  for (const d of candidates) {
+    const dc = Math.round(d.x / CELL - 0.5);
+    const dr = Math.round(d.y / CELL - 0.5);
+    const dist = heuristic({c:dc, r:dr}, point);
+    if (dist < bestDist) { bestDist = dist; best = d; }
+  }
+  return best;
+}
+
+function assign(dev, task) {
+  task.state = 'assigned';
+  task.assignedDevice = dev.id;
+  dev.busy = true;
+  dev.task = task;
+  dev.waitTime = 0;
+  // Path to pickup
+  const dc = Math.round(dev.x / CELL - 0.5);
+  const dr = Math.round(dev.y / CELL - 0.5);
+  dev.path = aStar({c:dc, r:dr}, getTaskPickup(task), getTravelRule(dev));
+  dev.pathIdx = 0;
+  dev.phase = 'pickup'; // pickup -> deliver
+}
+
+// ─────────────────────────────────────────────
+//  INTERSECTION / TRAFFIC CONTROL
+// ─────────────────────────────────────────────
+function isIntersection(c, r) {
+  return CORRIDOR_COLS.includes(c) && CORRIDOR_ROWS.includes(r);
+}
+
+function tryLockIntersection(c, r, deviceId) {
+  const key = `${c},${r}`;
+  if (intersectionLocks[key] === undefined) {
+    intersectionLocks[key] = deviceId;
+    return true;
+  }
+  return intersectionLocks[key] === deviceId;
+}
+
+function releaseIntersection(c, r, deviceId) {
+  const key = `${c},${r}`;
+  if (intersectionLocks[key] === deviceId) delete intersectionLocks[key];
+}
+
+// ─────────────────────────────────────────────
+//  SIMULATION UPDATE
+// ─────────────────────────────────────────────
+function updateDevices(dt) {
+  for (const dev of devices) {
+    if (!dev.busy || !dev.path || dev.path.length === 0) {
+      if (dev.busy) dev.waitTime += dt;
+      else dev.idleTime += dt;
+      continue;
+    }
+
+    const target = dev.path[dev.pathIdx];
+    const tx = (target.c + 0.5) * CELL;
+    const ty = (target.r + 0.5) * CELL;
+    const dx = tx - dev.x;
+    const dy = ty - dev.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const step = dev.speed * CELL * dt * speedMult;
+
+    // Intersection reservation (smart mode)
+    if (smartMode && isIntersection(target.c, target.r)) {
+      if (!tryLockIntersection(target.c, target.r, dev.id)) {
+        // Wait — another device has the lock
+        dev.waitTime += dt;
+        dev.waitingAtIntersection = true;
+
+        // Count conflict only once per wait start
+        if (!dev._conflictCounted) {
+          currentStats().conflicts++;
+          dev._conflictCounted = true;
+          // Visual flash
+          conflicts.push({ c: target.c, r: target.r, ttl: 0.5 });
+          addLog('conflict', `设备${dev.id}在路口(${target.c},${target.r})等待`);
+        }
+        continue;
+      }
+    } else if (!smartMode && isIntersection(target.c, target.r)) {
+      // Traditional: first-come-first-served via simple lock
+      if (!tryLockIntersection(target.c, target.r, dev.id)) {
+        dev.waitTime += dt;
+        dev.waitingAtIntersection = true;
+        if (!dev._conflictCounted) {
+          currentStats().conflicts++;
+          dev._conflictCounted = true;
+          conflicts.push({ c: target.c, r: target.r, ttl: 0.5 });
+        }
+        continue;
+      }
+    }
+
+    dev._conflictCounted = false;
+    dev.waitingAtIntersection = false;
+    dev.utilTime += dt;
+
+    // Release previous intersection lock when leaving
+    const prevC = Math.round(dev.x / CELL - 0.5);
+    const prevR = Math.round(dev.y / CELL - 0.5);
+    if (isIntersection(prevC, prevR)) releaseIntersection(prevC, prevR, dev.id);
+
+    if (dist <= step) {
+      dev.x = tx; dev.y = ty;
+      dev.pathIdx++;
+
+      if (dev.pathIdx >= dev.path.length) {
+        // Reached current path goal
+        if (dev.phase === 'pickup') {
+          // Arrived at pickup
+          dev.task.state = 'pickup';
+          if (!dev.task.pickupTime) dev.task.pickupTime = simTime;
+          dev.phase = 'deliver';
+          dev.path = aStar(getTaskPickup(dev.task), getTaskDrop(dev.task), getTravelRule(dev));
+          dev.pathIdx = 0;
+        } else if (dev.phase === 'deliver') {
+          finishTaskStep(dev);
+        }
+      }
+    } else {
+      dev.x += (dx / dist) * step;
+      dev.y += (dy / dist) * step;
+    }
+  }
+}
+
+function releaseDevice(dev) {
+  const c = Math.round(dev.x / CELL - 0.5);
+  const r = Math.round(dev.y / CELL - 0.5);
+  releaseIntersection(c, r, dev.id);
+
+  dev.busy = false;
+  dev.task = null;
+  dev.path = [];
+  dev.pathIdx = 0;
+  dev.phase = null;
+  dev.waitingAtIntersection = false;
+  dev._conflictCounted = false;
+}
+
+function finalizeTask(task) {
+  task.state = 'done';
+  task.doneTime = simTime;
+  const wait = task.doneTime - task.spawnTime;
+  const s = currentStats();
+  s.done++;
+  s.totalWait += wait;
+  task.px = (task.to.c + 0.5) * CELL;
+  task.py = (task.to.r + 0.5) * CELL;
+
+  addLog('done', `Task #${task.id} done in ${wait.toFixed(1)}s`);
+  tasks = tasks.filter(t => t !== task);
+}
+
+function finishTaskStep(dev) {
+  const task = dev.task;
+  if (smartMode || !task.legs) {
+    completeTask(dev);
+    return;
+  }
+
+  const finishedLeg = task.legs[task.legIndex];
+  task.px = dev.x;
+  task.py = dev.y;
+  releaseDevice(dev);
+
+  if (task.legIndex >= task.legs.length - 1) {
+    finalizeTask(task);
+    return;
+  }
+
+  task.legIndex++;
+  const nextLeg = prepareTraditionalTask(task);
+  addLog('task', `Task #${task.id} relay ${finishedLeg.zone}->${nextLeg.zone}`);
+}
+
+function completeTask(dev) {
+  const task = dev.task;
+  releaseDevice(dev);
+  finalizeTask(task);
+  return;
+  task.state = 'done';
+  task.doneTime = simTime;
+  const wait = task.doneTime - task.spawnTime;
+  const s = currentStats();
+  s.done++;
+  s.totalWait += wait;
+
+  addLog('done', `任务#${task.id} 完成 耗时${wait.toFixed(1)}s`);
+
+  // Release any held intersection
+  const c = Math.round(dev.x / CELL - 0.5);
+  const r = Math.round(dev.y / CELL - 0.5);
+  releaseIntersection(c, r, dev.id);
+
+  dev.busy = false;
+  dev.task = null;
+  dev.path = [];
+  dev.pathIdx = 0;
+  dev.phase = null;
+
+  // Remove completed task
+  tasks = tasks.filter(t => t !== task);
+}
+
+// ─────────────────────────────────────────────
+//  RENDERING
+// ─────────────────────────────────────────────
+function render() {
+  const s = canvas._scale || 1;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.scale(s, s);
+
+  drawGrid();
+  drawZones();
+  drawCorridors();
+  drawIntersectionLocks();
+  drawConflicts();
+  drawTasks();
+  drawDevices();
+
+  ctx.restore();
+}
+
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  ctx.lineWidth = 0.5;
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c*CELL, 0); ctx.lineTo(c*CELL, ROWS*CELL); ctx.stroke();
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath(); ctx.moveTo(0, r*CELL); ctx.lineTo(COLS*CELL, r*CELL); ctx.stroke();
+  }
+}
+
+function drawZones() {
+  for (const [key, z] of Object.entries(ZONES)) {
+    ctx.fillStyle = z.color;
+    ctx.fillRect(z.x*CELL, z.y*CELL, z.w*CELL, z.h*CELL);
+    ctx.strokeStyle = z.border;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(z.x*CELL+1, z.y*CELL+1, z.w*CELL-2, z.h*CELL-2);
+    ctx.fillStyle = z.border;
+    ctx.font = 'bold 13px Arial';
+    ctx.fillText(z.label, z.x*CELL+6, z.y*CELL+18);
+  }
+}
+
+function drawCorridors() {
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  for (const c of CORRIDOR_COLS) ctx.fillRect(c*CELL, 0, CELL, ROWS*CELL);
+  for (const r of CORRIDOR_ROWS) ctx.fillRect(0, r*CELL, COLS*CELL, CELL);
+
+  // Intersection markers
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 0.5;
+  for (const {c, r} of INTERSECTIONS) {
+    ctx.strokeRect(c*CELL+2, r*CELL+2, CELL-4, CELL-4);
+  }
+}
+
+function drawIntersectionLocks() {
+  if (!smartMode) return;
+  for (const [key, devId] of Object.entries(intersectionLocks)) {
+    const [c, r] = key.split(',').map(Number);
+    const dev = devices[devId];
+    if (!dev) continue;
+    ctx.fillStyle = dev.color + '44';
+    ctx.fillRect(c*CELL, r*CELL, CELL, CELL);
+  }
+}
+
+function drawConflicts() {
+  for (const cf of conflicts) {
+    const alpha = Math.min(1, cf.ttl * 4);
+    ctx.fillStyle = `rgba(168,85,247,${alpha * 0.5})`;
+    ctx.fillRect(cf.c*CELL, cf.r*CELL, CELL, CELL);
+    ctx.strokeStyle = `rgba(168,85,247,${alpha})`;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(cf.c*CELL, cf.r*CELL, CELL, CELL);
+  }
+}
+
+function drawTasks() {
+  for (const task of tasks) {
+    if (task.state === 'pending' || task.state === 'assigned') {
+      // Draw pickup marker
+      ctx.fillStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.arc(task.px, task.py, 5, 0, Math.PI*2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = '9px Arial';
+      ctx.fillText(`#${task.id}`, task.px+6, task.py+4);
+    }
+  }
+}
+
+function drawDevices() {
+  for (const dev of devices) {
+    const r = 8;
+
+    // Draw path (faint)
+    if (dev.path && dev.pathIdx < dev.path.length) {
+      ctx.beginPath();
+      ctx.moveTo(dev.x, dev.y);
+      for (let i = dev.pathIdx; i < dev.path.length; i++) {
+        const pt = dev.path[i];
+        ctx.lineTo((pt.c+0.5)*CELL, (pt.r+0.5)*CELL);
+      }
+      ctx.strokeStyle = dev.color + '55';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // Draw carried package
+    if (dev.phase === 'deliver' && dev.task) {
+      ctx.fillStyle = '#f59e0b88';
+      ctx.fillRect(dev.x - 6, dev.y - 6, 12, 12);
+    }
+
+    // Device body
+    ctx.beginPath();
+    if (dev.type === 'AGV') {
+      ctx.arc(dev.x, dev.y, r, 0, Math.PI*2);
+    } else if (dev.type === 'Forklift') {
+      ctx.rect(dev.x - r, dev.y - r, r*2, r*2);
+    } else {
+      // Shuttle: rounded rect / diamond
+      ctx.moveTo(dev.x, dev.y - r);
+      ctx.lineTo(dev.x + r, dev.y);
+      ctx.lineTo(dev.x, dev.y + r);
+      ctx.lineTo(dev.x - r, dev.y);
+      ctx.closePath();
+    }
+    ctx.fillStyle = dev.busy ? dev.color : dev.color + '88';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = dev.waitingAtIntersection ? 2.5 : 1;
+    ctx.stroke();
+
+    // Device ID label
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 8px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(dev.id, dev.x, dev.y);
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+
+    // Waiting indicator
+    if (dev.waitingAtIntersection) {
+      ctx.fillStyle = '#a855f7';
+      ctx.beginPath();
+      ctx.arc(dev.x + r - 2, dev.y - r + 2, 4, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+// ─────────────────────────────────────────────
+//  UI UPDATES
+// ─────────────────────────────────────────────
+function updateUI() {
+  const s = currentStats();
+  const avgWait = s.done > 0 ? (s.totalWait / s.done).toFixed(1) : '0.0';
+  const totalTime = devices.reduce((a,d) => a + d.utilTime + d.idleTime, 0);
+  const utilTime = devices.reduce((a,d) => a + d.utilTime, 0);
+  const util = totalTime > 0 ? Math.round(utilTime / totalTime * 100) : 0;
+
+  document.getElementById('st-done').textContent = s.done;
+  document.getElementById('st-pending').textContent = tasks.filter(t=>t.state==='pending').length;
+  document.getElementById('st-conflict').textContent = s.conflicts;
+  document.getElementById('st-util').textContent = util + '%';
+
+  // Compare bars
+  const maxDone = Math.max(1, stats.trad.done, stats.smart.done);
+  const maxWait = Math.max(1,
+    stats.trad.done > 0 ? stats.trad.totalWait/stats.trad.done : 0,
+    stats.smart.done > 0 ? stats.smart.totalWait/stats.smart.done : 0
+  );
+  const maxConf = Math.max(1, stats.trad.conflicts, stats.smart.conflicts);
+
+  setBar('cmp-done-trad', stats.trad.done / maxDone * 100, stats.trad.done);
+  setBar('cmp-done-smart', stats.smart.done / maxDone * 100, stats.smart.done);
+  const tw = stats.trad.done > 0 ? (stats.trad.totalWait/stats.trad.done) : 0;
+  const sw = stats.smart.done > 0 ? (stats.smart.totalWait/stats.smart.done) : 0;
+  setBar('cmp-wait-trad', tw / maxWait * 100, tw.toFixed(1));
+  setBar('cmp-wait-smart', sw / maxWait * 100, sw.toFixed(1));
+  setBar('cmp-conf-trad', stats.trad.conflicts / maxConf * 100, stats.trad.conflicts);
+  setBar('cmp-conf-smart', stats.smart.conflicts / maxConf * 100, stats.smart.conflicts);
+
+  // Device list
+  const dl = document.getElementById('deviceList');
+  dl.innerHTML = devices.map(d => {
+    const total = d.utilTime + d.idleTime;
+    const u = total > 0 ? Math.round(d.utilTime / total * 100) : 0;
+    const displayStatus = d.waitingAtIntersection ? 'Queueing' : d.busy ? `${d.zone} / ${d.phase}` : 'Idle';
+    const statusText = d.waitingAtIntersection ? '等待路口' : d.busy ? `→${d.task?.toZone||'?'}区` : '空闲';
+    return `<div class="device-row">
+      <div class="device-dot" style="background:${d.color}"></div>
+      <span class="device-name">${d.type}#${d.id}</span>
+      <span class="device-status">${displayStatus}</span>
+      <div class="device-bar-wrap"><div class="device-bar" style="width:${u}%;background:${d.color}"></div></div>
+      <span style="font-size:10px;color:#8b949e;width:28px;text-align:right">${u}%</span>
+    </div>`;
+  }).join('');
+}
+
+function setBar(id, pct, val) {
+  const el = document.getElementById(id);
+  if (el) el.style.width = Math.min(100, pct) + '%';
+  const vEl = document.getElementById(id + '-v');
+  if (vEl) vEl.textContent = val;
+}
+
+function addLog(type, msg) {
+  const tags = { task:'task', conflict:'conflict', done:'done', mode:'mode' };
+  logEntries.unshift({ type, msg, time: simTime.toFixed(0) });
+  if (logEntries.length > 40) logEntries.pop();
+  const la = document.getElementById('log-area');
+  la.innerHTML = logEntries.slice(0, 15).map((e, i) =>
+    `<div class="log-entry ${i===0?'new':''}">
+      <span class="tag tag-${e.type}">${e.type}</span>
+      <span style="color:#8b949e;font-size:10px">[${e.time}s]</span> ${e.msg}
+    </div>`
+  ).join('');
+}
+
+// ─────────────────────────────────────────────
+//  MAIN LOOP
+// ─────────────────────────────────────────────
+function loop(ts) {
+  if (!lastTimestamp) lastTimestamp = ts;
+  const rawDt = Math.min((ts - lastTimestamp) / 1000, 0.05); // cap at 50ms
+  lastTimestamp = ts;
+  const dt = rawDt; // simulation speed handled in device update via speedMult
+
+  simTime += rawDt * speedMult;
+
+  // Decay conflict visuals
+  for (let i = conflicts.length - 1; i >= 0; i--) {
+    conflicts[i].ttl -= rawDt;
+    if (conflicts[i].ttl <= 0) conflicts.splice(i, 1);
+  }
+
+  // Spawn tasks
+  if (simTime - lastTaskTime > taskInterval / 1000 / speedMult) {
+    spawnTask();
+    lastTaskTime = simTime;
+    taskInterval = 2000 + Math.random() * 1500;
+  }
+
+  assignTasks();
+  updateDevices(rawDt);
+  render();
+  updateUI();
+
+  animFrame = requestAnimationFrame(loop);
+}
+
+// ─────────────────────────────────────────────
+//  CONTROLS
+// ─────────────────────────────────────────────
+function resetLiveOperations() {
+  tasks = [];
+  conflicts = [];
+  intersectionLocks = {};
+  createDevices();
+  lastTaskTime = simTime;
+}
+
+function toggleMode() {
+  smartMode = !smartMode;
+  const btn = document.getElementById('btnMode');
+  const lbl = document.getElementById('modeLabel');
+  if (smartMode) {
+    btn.textContent = '切换传统模式';
+    btn.className = 'btn btn-mode active-smart';
+    lbl.textContent = '智能协同模式';
+    lbl.className = 'mode-label smart';
+    addLog('mode', '已切换至智能协同调度模式');
+  } else {
+    btn.textContent = '切换智能模式';
+    btn.className = 'btn btn-mode active-trad';
+    lbl.textContent = '传统分区模式';
+    lbl.className = 'mode-label trad';
+    addLog('mode', '已切换至传统分区模式');
+  }
+  resetLiveOperations();
+  // Release all intersection locks on mode switch
+  intersectionLocks = {};
+}
+
+function resetSim() {
+  cancelAnimationFrame(animFrame);
+  simTime = 0; lastTimestamp = 0; lastTaskTime = 0;
+  tasks = []; taskIdCounter = 0;
+  conflicts = []; intersectionLocks = {};
+  logEntries = [];
+  stats = { trad:{ done:0, totalWait:0, conflicts:0, taskCount:0 }, smart:{ done:0, totalWait:0, conflicts:0, taskCount:0 } };
+  createDevices();
+  addLog('mode', '模拟已重置');
+  animFrame = requestAnimationFrame(loop);
+}
+
+document.getElementById('speedSlider').addEventListener('input', function() {
+  speedMult = parseFloat(this.value);
+  document.getElementById('speedLabel').textContent = speedMult + 'x';
+});
+
+// ─────────────────────────────────────────────
+//  INIT
+// ─────────────────────────────────────────────
+window.addEventListener('resize', () => { resizeCanvas(); });
+resizeCanvas();
+createDevices();
+addLog('mode', '仿真启动 — 传统分区模式');
+animFrame = requestAnimationFrame(loop);
+</script>
+</body>
+</html>
